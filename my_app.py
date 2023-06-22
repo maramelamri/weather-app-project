@@ -111,8 +111,8 @@ plt.show()
 
 # %%
 # Calculate summary statistics
-summary_stats = df.describe()
-print(summary_stats)
+# summary_stats = df.describe()
+# print(summary_stats)
 
 # %% [markdown]
 # #Train/Test split
@@ -166,6 +166,19 @@ model.save_model('xgboost_model.model')
 
 
 # %% [markdown]
+# #Store the weather data in an SQLite database for future use
+
+
+# Create a connection to the database
+conn = sqlite3.connect('weather_data.db')
+
+# Write the data to a sqlite table
+df.to_sql('weather', conn, if_exists='replace', index=False)
+
+# Close the connection
+conn.close()
+
+# %%
 # #Make prediction
 
 # %%
@@ -274,23 +287,44 @@ def predict_weather(input_date, model_path='xgboost_model.model'):
     # Return a dictionary of predictions
     return dict(zip(labels, prediction[0]))
 def main():
-    st.title('Weather Prediction App')
-    st.image(r'C:\Users\MARAM\Desktop\GOMYCODE\weather_app_project\all_season_cycle.jpg.jpg', width=700)
+    st.title("Tunisia's Atmospheric Oracle:Tempus App")
+    st.image(r'all_season_cycle.jpg', width=700)
+    # Create a date column
+    df['date'] = pd.to_datetime(df[['year','month','day']])
+
+    # Temperature plot
+    plt.figure(figsize=(10, 6))
+    sns.lineplot(data=df, x='date', y='temperature_2m_mean')
+    plt.xticks(rotation=45)
+    st.pyplot(plt)
+    # Shortwave Radiation Sum Histogram
+    st.title('Shortwave Radiation Sum Histogram')
+    plt.figure(figsize=(10, 6))
+    plt.hist(df['shortwave_radiation_sum'], bins=30, edgecolor='black')
+    plt.xlabel('Shortwave Radiation Sum (W/m²)')
+    plt.ylabel('Frequency')
+    st.pyplot(plt)
+    # Create a new dataframe for the area chart
+    df_areachart = df[['date', 'windspeed_10m_max']].set_index('date')
+
+    # Plot the area chart
+    # Create a new dataframe for the line chart
+    df_linechart = df[['date', 'windspeed_10m_max']].set_index('date')
+
+    # Plot the line chart
+    st.line_chart(df_linechart)
+
+    date_input = st.text_input("Hey there! I'm your weather buddy. Ask and I'll sprinkle some forecasts your way:please Enter a date for weather prediction (YYYY-MM-DD) or 'today':", value="")
+
     
-    # Add a selectbox to the sidebar
-    add_selectbox = st.sidebar.selectbox(
-        'How would you like to interact?',
-        ('Chat', 'Speech')
-    )
-    if add_selectbox == 'Chat':
-        date_input = st.text_input("Enter a date for weather prediction (YYYY-MM-DD) or 'today' or 'tomorrow':", value="")
+    if st.button('Chat'):
         if date_input.lower() == 'today':
             date_input = datetime.date.today()
-        elif date_input.lower() == 'tomorrow':
-            date_input = datetime.date.today() + datetime.timedelta(days=1)
+        
         else:
             date_input = pd.to_datetime(date_input)
-    elif add_selectbox == 'Speech':
+    # elif add_selectbox == 'Speech':
+    if st.button('Speech'):
         if st.button("Start Recording"):
             text = transcribe_speech()
             st.write("Transcription: ", text)
@@ -306,7 +340,7 @@ def main():
 
     with st.spinner("Predicting..."):
         try:
-            results = predict_weather(date_input)
+            results = predict_weather(date_input, r"C:\Users\MARAM\Desktop\GOMYCODE\weather_app_project\xgboost_model.model")
             st.success("Prediction successful!")
             for key, value in results.items():
                 emoji = "☀️" if key == 'temperature_2m_mean' and value > 20 else "⛅️" if key == 'temperature_2m_mean' and value > 10 else "❄️"
@@ -324,20 +358,7 @@ if __name__ == "__main__":
 
 
 
-# %% [markdown]
-# #Store the weather data in an SQLite database for future use
 
-
-# Create a connection to the database
-conn = sqlite3.connect('weather_data.db')
-
-# Write the data to a sqlite table
-df.to_sql('weather', conn, if_exists='replace', index=False)
-
-# Close the connection
-conn.close()
-
-# %%
 
 
 # %% [markdown]
