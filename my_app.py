@@ -293,17 +293,30 @@ def main():
     df['date'] = pd.to_datetime(df[['year','month','day']])
 
     # Temperature plot
-    plt.figure(figsize=(10, 6))
-    sns.lineplot(data=df, x='date', y='temperature_2m_mean')
-    plt.xticks(rotation=45)
-    st.pyplot(plt)
+    # Create a new dataframe for the area chart
+    df_areachart_temp = df[['date', 'temperature_2m_mean']].set_index('date')
+
+    # Plot the area chart for temperature_2m_mean
+    st.area_chart(df_areachart_temp)
+
+
     # Shortwave Radiation Sum Histogram
-    st.title('Shortwave Radiation Sum Histogram')
-    plt.figure(figsize=(10, 6))
-    plt.hist(df['shortwave_radiation_sum'], bins=30, edgecolor='black')
-    plt.xlabel('Shortwave Radiation Sum (W/m²)')
-    plt.ylabel('Frequency')
-    st.pyplot(plt)
+    # Create a new dataframe for the line plot
+    df_linechart_radiation = df[['date', 'shortwave_radiation_sum']].set_index('date')
+
+    # Define a color map for the line plot
+    cmap = sns.cubehelix_palette(start=1.5, rot=1, dark=0.1, light=.8, as_cmap=True)
+
+    # Plot the line plot for shortwave_radiation_sum
+    # Create the FacetGrid object
+    g = sns.relplot(data=df, x='date', y='shortwave_radiation_sum', kind='line', aspect=2)
+
+    # Rotate the x-axis labels for better readability
+    g.set_xticklabels(rotation=45)
+
+    # Show the shortwave_radiation_sum plot
+    plt.show()
+
     # Create a new dataframe for the area chart
     df_areachart = df[['date', 'windspeed_10m_max']].set_index('date')
 
@@ -313,8 +326,36 @@ def main():
 
     # Plot the line chart
     st.line_chart(df_linechart)
+    # plot a vilon plot for et0_fao_evapotranspiration
+    plt.figure(figsize=(10, 6))
+    sns.violinplot(data=df, x='month', y='et0_fao_evapotranspiration')
+    plt.title('Monthly et0_fao_evapotranspiration Violin Plots')
+    st.pyplot(plt)
+    #plot the precipitaion
+    # Create the plot
+    plt.figure(figsize=(10, 6))
+    sns.lineplot(data=df, x='date', y='precipitation_hours')
+
+    # Set the y-axis to log scale
+    plt.yscale('log')
+
+    # Set a small value for the lower y limit to avoid negative infinity
+    plt.ylim(bottom=0.1)
+
+    # Set the title and labels
+    plt.title('Precipitation Hours Over Time')
+    plt.xlabel('Date')
+    plt.ylabel('Precipitation Hours (log scale)')
+
+    # Rotate x-axis labels for better readability
+    plt.xticks(rotation=45)
+
+    # Show the plot
+    st.pyplot(plt.gcf())
+
 
     date_input = st.text_input("Hey there! I'm your weather buddy. Ask and I'll sprinkle some forecasts your way:please Enter a date for weather prediction (YYYY-MM-DD) or 'today':", value="")
+    
 
     
     if st.button('Chat'):
