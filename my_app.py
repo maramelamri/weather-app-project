@@ -81,7 +81,32 @@ plt.show()
 # -shortwave_radiation_sum shows a moderate positive correlation with et0_fao_evapotranspiration, suggesting that higher shortwave radiation is associated with higher evapotranspiration.
 # 
 # -windspeed_10m_max and windgusts_10m_max have strong positive correlations, indicating that they are closely related and tend to move together.
-#
+# 
+
+# %% [markdown]
+# #Plotting temperature_2m_mean and shortwave_radiation_sum
+
+# %%
+# Set up the figure and axes
+fig, axes = plt.subplots(nrows=2, ncols=1, figsize=(10, 8))
+
+# Plot temperature_2m_mean
+sns.lineplot(data=df, x='time', y='temperature_2m_mean', ax=axes[0])
+axes[0].set_title('Temperature 2m Mean')
+
+# Plot shortwave_radiation_sum
+sns.lineplot(data=df, x='time', y='shortwave_radiation_sum', ax=axes[1])
+axes[1].set_title('Shortwave Radiation Sum')
+
+# Rotate x-axis labels for better visibility
+axes[0].tick_params(axis='x', rotation=45)
+axes[1].tick_params(axis='x', rotation=45)
+
+# Adjust spacing between subplots
+plt.subplots_adjust(hspace=0.4)
+
+# Show the plot
+plt.show()
 
 
 # %%
@@ -144,19 +169,19 @@ model.save_model('xgboost_model.model')
 # #Store the weather data in an SQLite database for future use
 
 
-# Create a connection to the database
-conn = sqlite3.connect('weather_data.db')
 
 # Write the data to a sqlite table
 with sqlite3.connect('weather_data.db') as conn:
     df.to_sql('weather', conn, if_exists='replace', index=False)
+#
+# %% [predict_weather function]
 
-# %%
 def predict_weather(input_date, model_path='xgboost_model.model'):
     # Load the XGBoost model
+    
     model = xgb.XGBRegressor()
     model.load_model(model_path)
-
+    
     try:
         # Convert the user date to a dataframe
         input_date = pd.to_datetime(input_date)
@@ -166,31 +191,45 @@ def predict_weather(input_date, model_path='xgboost_model.model'):
             'day': [input_date.day]
         })
 
+
+        # Convert the data to DMatrix format
+        user_data_dmatrix = xgb.DMatrix(input_date)
+
         # Make a prediction for the provided date
-        prediction = model.predict(input_date)
+        prediction = model.predict(user_data_dmatrix)
 
         # Define labels for the predicted values
         labels = ['temperature_2m_mean', 'shortwave_radiation_sum', 'precipitation_sum', 'rain_sum', 'windspeed_10m_max', 'et0_fao_evapotranspiration']
 
         # Adjust negative values for rain_sum and precipitation_sum to 0
         for i, label in enumerate(labels):
-            if i < len(prediction) and label in ['rain_sum', 'precipitation_sum'] and prediction[i] < 0:
+            if label in ['rain_sum', 'precipitation_sum'] and prediction[i] < 0:
                 prediction[i] = 0
 
-        # Prepare a dictionary of predicted values alongside their corresponding labels
-        result = dict(zip(labels, prediction))
+        # Return a dictionary of predictions
+        return dict(zip(labels, prediction))
 
-        return result
-    except ValueError:
-        print("You entered an invalid date. Please enter the date in the format YYYY-MM-DD.")
+    except Exception as e:
+        # Print the error for debugging
+        print(f"An error occurred: {e}")
+        return {'error': str(e)}
+
 
  
-# %% [markdown]
+
+
+
+
 ##Streamlit app
 
 # %%
 
+
 def main():
+    st.title("Tunisia's Atmospheric Oracle: Tempus App")
+    st.image(r'all_season_cycle.jpg', width=700)
+    
+    # Function to recognize audio
     def recognize_audio(audio_file):
         audio = AudioSegment.from_file(audio_file, format='wav')
         r = sr.Recognizer()
@@ -198,14 +237,8 @@ def main():
             audio = r.record(source)
             text = r.recognize_google(audio)
         return text
-
-    st.title("Tunisia's Atmospheric Oracle:Tempus App")
-    st.image(r'all_season_cycle.jpg', width=700)
-
-    df['date'] = pd.to_datetime(df[['year','month','day']])
-
-    df_areachart_temp = df[['date', 'temperature_2m_mean']].set_index('date')
-    st.area_chart(df_areachart_temp)
+    
+    df['date'] = pd.to_datetime(df[['year', 'month', 'day']])
 
     plt.figure(figsize=(10, 5))
     sns.histplot(data=df, x='shortwave_radiation_sum', kde=False, color='orange', bins=10)
@@ -213,6 +246,9 @@ def main():
     plt.xlabel('Shortwave Radiation Sum MJ/m²')
     plt.ylabel('Frequency')
     st.pyplot(plt)
+
+    df_areachart_temp = df[['date', 'temperature_2m_mean']].set_index('date')
+    st.area_chart(df_areachart_temp)
 
     df_areachart = df[['date', 'windspeed_10m_max']].set_index('date')
     df_linechart = df[['date', 'windspeed_10m_max']].set_index('date')
@@ -233,7 +269,12 @@ def main():
     plt.xticks(rotation=45)
     st.pyplot(plt.gcf())
 
-    date_input = st.text_input("Hey there! I'm your weather buddy. Ask and I'll sprinkle some forecasts your way:please Enter a date for weather prediction (YYYY-MM-DD) or 'today':", value="")
+    date_input = st.text_input("Hey there! I'm your weather buddy. Ask and I'll sprinkle some forecasts your way: please enter a date for weather prediction (YYYY-MM-DD) or 'today':", value="")
+    try:
+        datetime.datetime.strptime(date_input, '%Y-%m-%d')
+    except ValueError:
+        st.error("Invalid date format. Please enter date in the format YYYY-MM-DD.")
+        return  # Exit from main function
 
     if st.button("Predict"):
         with st.spinner("Predicting..."):
@@ -247,15 +288,6 @@ def main():
             except ValueError:
                 st.error("Please enter a valid date.")
 
-    st.sidebar.title("About")
-    st.sidebar.info("This app uses an XGBoost model trained on weather data to make predictions.")
-
-    if st.button('Chat'):
-        if date_input.lower() == 'today':
-            date_input = datetime.date.today()
-        else:
-            date_input = pd.to_datetime(date_input)
-
     if st.button('Speech'):
         if st.button("Start Recording"):
             text = transcribe_speech()
@@ -265,23 +297,28 @@ def main():
                 date_input = datetime.date.today()
             else:
                 st.write("Sorry, I can't understand the date. Please try again.")
-        
-        with st.spinner("Predicting..."):
-            try:
-                results = predict_weather(date_input, r"C:\Users\MARAM\Desktop\GOMYCODE\weather_app_project\xgboost_model.model")
-                st.success("Prediction successful!")
-                for key, value in results.items():
-                    emoji = "☀️" if key == 'temperature_2m_mean' and value > 20 else "⛅️" if key == 'temperature_2m_mean' and value > 10 else "❄️"
-                    emoji = "☔" if key in ['rain_sum', 'precipitation_sum'] and value > 0 else emoji
-                    st.write(f"{emoji} {key}: {value:.2f}")
-            except ValueError:
-                st.error("Please enter a valid date.")
 
-        st.sidebar.title("About")
-        st.sidebar.info("This app uses an XGBoost model trained on weather data to make predictions.")
+            with st.spinner("Predicting..."):
+                try:
+                    results = predict_weather(date_input, r"C:\Users\MARAM\Desktop\GOMYCODE\weather_app_project\xgboost_model.model")
+                    if 'error' in results:
+                        st.error("An error occurred: " + results['error'])
+                    else:
+                        st.success("Prediction successful!")
+                        for key, value in results.items():
+                            emoji = "☀️" if key == 'temperature_2m_mean' and value > 20 else "⛅️" if key == 'temperature_2m_mean' and value > 10 else "❄️"
+                            emoji = "☔" if key in ['rain_sum', 'precipitation_sum'] and value > 0 else emoji
+                            st.write(f"{emoji} {key}: {value:.2f}")
+
+                except ValueError:
+                    st.error("Please enter a valid date.")
+
+    st.sidebar.title("About")
+    st.sidebar.info("This app uses an XGBoost model trained on weather data to make predictions.")
 
 if __name__ == "__main__":
     main()
+
 
 
 
