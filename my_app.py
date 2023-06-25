@@ -15,10 +15,13 @@ import sqlite3
 import xgboost as xgb
 from sklearn.metrics import mean_squared_error
 from sklearn.metrics import mean_squared_error, r2_score
-import datetime
+from datetime import datetime
 import streamlit as st
 import speech_recognition as sr
 from pydub import AudioSegment
+import emoji
+
+
 
 
 # %% [markdown]
@@ -171,48 +174,66 @@ model.save_model('xgboost_model.model')
 
 
 # Write the data to a sqlite table
-with sqlite3.connect('weather_data.db') as conn:
-    df.to_sql('weather', conn, if_exists='replace', index=False)
+# Write the data to a SQLite table
+conn = sqlite3.connect('weather_data.db')
+c = conn.cursor()
+
+# Create table if not exists
+c.execute('''
+    CREATE TABLE IF NOT EXISTS weather(
+        time TEXT,
+        weathercode REAL,
+        temperature_2m_max REAL,
+        temperature_2m_min REAL,
+        temperature_2m_mean REAL,
+        sunrise TEXT,
+        sunset TEXT,
+        shortwave_radiation_sum REAL,
+        precipitation_sum REAL,
+        rain_sum REAL,
+        precipitation_hours REAL,
+        windspeed_10m_max REAL,
+        et0_fao_evapotranspiration REAL,
+        year INTEGER,
+        month INTEGER,
+        day INTEGER
+    )
+''')
+
+# Save data to SQLite database
+df.to_sql('weather', conn, if_exists='append', index=False)
+
+# Commit changes and close connection
+conn.commit()
+conn.close()
 #
 # %% [predict_weather function]
 
 def predict_weather(input_date, model_path='xgboost_model.model'):
-    # Load the XGBoost model
-    
-    model = xgb.XGBRegressor()
-    model.load_model(model_path)
-    
+    input_date = pd.to_datetime(input_date)
+    input_data = pd.DataFrame({
+        'year': [input_date.year],
+        'month': [input_date.month],
+        'day': [input_date.day]
+    })
+
+    labels = ['temperature_2m_mean', 'shortwave_radiation_sum', 'precipitation_sum', 'rain_sum', 'windspeed_10m_max', 'et0_fao_evapotranspiration']
+    prediction = {}
     try:
-        # Convert the user date to a dataframe
-        input_date = pd.to_datetime(input_date)
-        input_date = pd.DataFrame({
-            'year': [input_date.year],
-            'month': [input_date.month],
-            'day': [input_date.day]
-        })
-
-
-        # Convert the data to DMatrix format
-        user_data_dmatrix = xgb.DMatrix(input_date)
-
-        # Make a prediction for the provided date
-        prediction = model.predict(user_data_dmatrix)
-
-        # Define labels for the predicted values
-        labels = ['temperature_2m_mean', 'shortwave_radiation_sum', 'precipitation_sum', 'rain_sum', 'windspeed_10m_max', 'et0_fao_evapotranspiration']
-
-        # Adjust negative values for rain_sum and precipitation_sum to 0
+        model = xgb.XGBRegressor()
+        model.load_model(model_path)
+        prediction_array = model.predict(input_data)
         for i, label in enumerate(labels):
-            if label in ['rain_sum', 'precipitation_sum'] and prediction[i] < 0:
-                prediction[i] = 0
-
-        # Return a dictionary of predictions
-        return dict(zip(labels, prediction))
-
+            prediction[label] = prediction_array[0][i]
+            if label in ['rain_sum', 'precipitation_sum'] and prediction[label] < 0:
+                prediction[label] = 0
     except Exception as e:
-        # Print the error for debugging
         print(f"An error occurred: {e}")
         return {'error': str(e)}
+    
+    return prediction
+
+
 
 
  
@@ -226,99 +247,65 @@ def predict_weather(input_date, model_path='xgboost_model.model'):
 
 
 def main():
-    st.title("Tunisia's Atmospheric Oracle: Tempus App")
-    st.image(r'all_season_cycle.jpg', width=700)
-    
-    # Function to recognize audio
-    def recognize_audio(audio_file):
-        audio = AudioSegment.from_file(audio_file, format='wav')
-        r = sr.Recognizer()
-        with sr.AudioFile(audio_file) as source:
-            audio = r.record(source)
-            text = r.recognize_google(audio)
-        return text
-    
-    df['date'] = pd.to_datetime(df[['year', 'month', 'day']])
+    st.title("Weather Buddy: Chatbot and Predictions")
+    st.write("Welcome! I'm your weather buddy. How can I assist you today?")
+    st.write("Here's what I can do for you:")
+    st.write("1. Show prediction of temperature_2m_mean")
+    st.write("2. Show rain_sum")
+    st.write("3. Show precipitation_sum")
+    st.write("4. Show Shortwave Radiation Sum")
+    st.write("5. Show et0_fao_evapotranspiration")
+    st.write("6. Show all of the above")
 
-    plt.figure(figsize=(10, 5))
-    sns.histplot(data=df, x='shortwave_radiation_sum', kde=False, color='orange', bins=10)
-    plt.title('Shortwave Radiation Sum Histogram')
-    plt.xlabel('Shortwave Radiation Sum MJ/m²')
-    plt.ylabel('Frequency')
-    st.pyplot(plt)
+    # User interaction options
+    option = st.text_input("Please type the number of the option you want:")
 
-    df_areachart_temp = df[['date', 'temperature_2m_mean']].set_index('date')
-    st.area_chart(df_areachart_temp)
+    if option:  # check if option is not empty
+        if option.isdigit():
+            option = int(option)
+            if option >= 1 and option <= 6:
+                # Get user input for date
+                date_input = st.text_input("Please enter a date (YYYY-MM-DD) for the prediction:")
 
-    df_areachart = df[['date', 'windspeed_10m_max']].set_index('date')
-    df_linechart = df[['date', 'windspeed_10m_max']].set_index('date')
-    st.line_chart(df_linechart)
+                if date_input:  # check if date_input is not empty
+                    # Convert user input date to datetime format
+                    try:
+                        date = datetime.strptime(date_input, "%Y-%m-%d").date()
+                    except ValueError:
+                        st.error("Invalid date format. Please enter a date in the format YYYY-MM-DD.")
+                        return
 
-    plt.figure(figsize=(10, 6))
-    sns.violinplot(data=df, x='month', y='et0_fao_evapotranspiration')
-    plt.title('Monthly et0_fao_evapotranspiration Violin Plots')
-    st.pyplot(plt)
-
-    plt.figure(figsize=(10, 6))
-    sns.lineplot(data=df, x='date', y='precipitation_hours')
-    plt.yscale('log')
-    plt.ylim(bottom=0.1)
-    plt.title('Precipitation Hours Over Time')
-    plt.xlabel('Date')
-    plt.ylabel('Precipitation Hours (log scale)')
-    plt.xticks(rotation=45)
-    st.pyplot(plt.gcf())
-
-    date_input = st.text_input("Hey there! I'm your weather buddy. Ask and I'll sprinkle some forecasts your way: please enter a date for weather prediction (YYYY-MM-DD) or 'today':", value="")
-    try:
-        datetime.datetime.strptime(date_input, '%Y-%m-%d')
-    except ValueError:
-        st.error("Invalid date format. Please enter date in the format YYYY-MM-DD.")
-        return  # Exit from main function
-
-    if st.button("Predict"):
-        with st.spinner("Predicting..."):
-            try:
-                results = predict_weather(date_input)
-                st.success("Prediction successful!")
-                for key, value in results.items():
-                    emoji = "☀️" if key == 'temperature_2m_mean' and value > 20 else "⛅️" if key == 'temperature_2m_mean' and value > 10 else "❄️"
-                    emoji = "☔" if key in ['rain_sum', 'precipitation_sum'] and value > 0 else emoji
-                    st.write(f"{emoji} {key}: {value:.2f}")
-            except ValueError:
-                st.error("Please enter a valid date.")
-
-    if st.button('Speech'):
-        if st.button("Start Recording"):
-            text = transcribe_speech()
-            st.write("Transcription: ", text)
-
-            if "today" in text:
-                date_input = datetime.date.today()
-            else:
-                st.write("Sorry, I can't understand the date. Please try again.")
-
-            with st.spinner("Predicting..."):
-                try:
-                    results = predict_weather(date_input, r"C:\Users\MARAM\Desktop\GOMYCODE\weather_app_project\xgboost_model.model")
+                    # Display weather predictions based on user input
+                    results = predict_weather(date_input,model_path='xgboost_model.model')
                     if 'error' in results:
                         st.error("An error occurred: " + results['error'])
                     else:
-                        st.success("Prediction successful!")
-                        for key, value in results.items():
-                            emoji = "☀️" if key == 'temperature_2m_mean' and value > 20 else "⛅️" if key == 'temperature_2m_mean' and value > 10 else "❄️"
-                            emoji = "☔" if key in ['rain_sum', 'precipitation_sum'] and value > 0 else emoji
-                            st.write(f"{emoji} {key}: {value:.2f}")
+                        # Create mapping between options and keys
+                        options = {
+                            1: 'temperature_2m_mean',
+                            2: 'rain_sum',
+                            3: 'precipitation_sum',
+                            4: 'shortwave_radiation_sum',
+                            5: 'et0_fao_evapotranspiration'
+                        }
 
-                except ValueError:
-                    st.error("Please enter a valid date.")
+                        if option == 6:
+                            for key, value in results.items():
+                                st.write(f"{key}: {value:.2f}")
+                        else:
+                            key = options[option]
+                            if key in results:
+                                st.write(f"{key}: {results[key]:.2f}")
+                            else:
+                                st.error(f"No prediction available for {key}.")
 
-    st.sidebar.title("About")
-    st.sidebar.info("This app uses an XGBoost model trained on weather data to make predictions.")
+            else:
+                st.error("Invalid option. Please enter a number between 1 and 6.")
+        else:
+            st.error("Invalid input. Please enter a number.")
 
 if __name__ == "__main__":
     main()
-
 
 
 
