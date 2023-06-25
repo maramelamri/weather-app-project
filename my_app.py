@@ -247,6 +247,74 @@ def predict_weather(input_date, model_path='xgboost_model.model'):
 
 
 def main():
+    
+    # Function to display weather predictions with emojis
+    def display_predictions(key, value):
+        emojis = {
+            "temperature_2m_mean": "☀️",
+            "rain_sum": "☔️",
+            "precipitation_sum": "💧",
+            "shortwave_radiation_sum": "🌞",
+            "et0_fao_evapotranspiration": "🌱"
+        }
+        
+        if key in emojis:
+            st.write(f"{emojis[key]} {key}: {value:.2f}")
+        else:
+            st.write(f"{key}: {value:.2f}")
+
+
+    def plot_data(df):
+        # Create a date column
+        df['date'] = pd.to_datetime(df[['year','month','day']])
+
+        # Temperature plot
+        df_areachart_temp = df[['date', 'temperature_2m_mean']].set_index('date')
+        st.area_chart(df_areachart_temp)
+
+        # Histogram
+        plt.figure(figsize=(10, 5))
+        sns.histplot(data=df, x='shortwave_radiation_sum', kde=False, color='orange', bins=10)
+        plt.title('Shortwave Radiation Sum Histogram')
+        plt.xlabel('Shortwave Radiation Sum MJ/m²')
+        plt.ylabel('Frequency')
+        st.pyplot(plt)
+
+        # Shortwave Radiation Sum plot
+        df_linechart_radiation = df[['date', 'shortwave_radiation_sum']].set_index('date')
+        g = sns.relplot(data=df, x='date', y='shortwave_radiation_sum', kind='line', aspect=2)
+        g.set_xticklabels(rotation=45)
+        plt.show()
+
+        # Wind speed plot
+        df_linechart = df[['date', 'windspeed_10m_max']].set_index('date')
+        st.line_chart(df_linechart)
+
+        # Violin plot
+        plt.figure(figsize=(10, 6))
+        sns.violinplot(data=df, x='month', y='et0_fao_evapotranspiration')
+        plt.title('Monthly et0_fao_evapotranspiration Violin Plots')
+        st.pyplot(plt)
+
+        # Precipitation plot
+        plt.figure(figsize=(10, 6))
+        sns.lineplot(data=df, x='date', y='precipitation_hours')
+        plt.yscale('log')
+        plt.ylim(bottom=0.1)
+        plt.title('Precipitation Hours Over Time')
+        plt.xlabel('Date')
+        plt.ylabel('Precipitation Hours (log scale)')
+        plt.xticks(rotation=45)
+        st.pyplot(plt.gcf())
+
+    st.title("Tunisia's Atmospheric Oracle: Tempus App")
+    st.image(r'all_season_cycle.jpg', width=700)
+
+    st.sidebar.title("About")
+    st.sidebar.info("This app uses an XGBoost model trained on weather data to make predictions.")
+    
+    
+    # user interaction code 
     st.title("Weather Buddy: Chatbot and Predictions")
     st.write("Welcome! I'm your weather buddy. How can I assist you today?")
     st.write("Here's what I can do for you:")
@@ -276,7 +344,7 @@ def main():
                         return
 
                     # Display weather predictions based on user input
-                    results = predict_weather(date_input,model_path='xgboost_model.model')
+                    results = predict_weather(date_input, model_path='xgboost_model.model')
                     if 'error' in results:
                         st.error("An error occurred: " + results['error'])
                     else:
@@ -291,11 +359,11 @@ def main():
 
                         if option == 6:
                             for key, value in results.items():
-                                st.write(f"{key}: {value:.2f}")
+                                display_predictions(key, value)
                         else:
                             key = options[option]
                             if key in results:
-                                st.write(f"{key}: {results[key]:.2f}")
+                                display_predictions(key, results[key])
                             else:
                                 st.error(f"No prediction available for {key}.")
 
@@ -303,9 +371,13 @@ def main():
                 st.error("Invalid option. Please enter a number between 1 and 6.")
         else:
             st.error("Invalid input. Please enter a number.")
+    # Assuming df is your DataFrame
+    plot_data(df)
 
 if __name__ == "__main__":
     main()
+
+
 
 
 
