@@ -20,6 +20,9 @@ import streamlit as st
 import speech_recognition as sr
 from pydub import AudioSegment
 import emoji
+import dateparser
+
+
 
 
 
@@ -245,78 +248,63 @@ def predict_weather(input_date, model_path='xgboost_model.model'):
 
 # %%
 
+# Transcribe function
+def transcribe_speech():
+    r = sr.Recognizer()
+    with sr.Microphone() as source:
+        st.info("Speak now...")
+        audio_text = r.listen(source)
+        st.info("Transcribing...")
+        try:
+            # Using Google Speech Recognition
+            text = r.recognize_google(audio_text)
 
+            # Check if "for date" is in the text
+            if "for date" in text:
+                # Extract the date string
+                date_string = text.split("for date")[-1].strip()
+                # Extract the option
+                option = text.split(" ")[-1]
+                
+                # Try to parse the date
+                date_object = dateparser.parse(date_string)
+                
+                # If date parsing was successful, replace the date string with a formatted date
+                if date_object:
+                    date_string = date_object.strftime("%Y-%m-%d")
+
+                return option, date_string
+            else:
+                return None, None
+        except:
+            return None, None
+
+
+# Function to display weather predictions with emojis
+def display_predictions(key, value):
+    emojis = {
+        "temperature_2m_mean": "☀️",
+        "rain_sum": "☔️",
+        "precipitation_sum": "💧",
+        "shortwave_radiation_sum": "🌞",
+        "et0_fao_evapotranspiration": "🌱"
+    }
+
+    if key in emojis:
+        st.write(f"{emojis[key]} {key}: {value:.2f}")
+    else:
+        st.write(f"{key}: {value:.2f}")
+
+
+# Main function
 def main():
-    
-    # Function to display weather predictions with emojis
-    def display_predictions(key, value):
-        emojis = {
-            "temperature_2m_mean": "☀️",
-            "rain_sum": "☔️",
-            "precipitation_sum": "💧",
-            "shortwave_radiation_sum": "🌞",
-            "et0_fao_evapotranspiration": "🌱"
-        }
-        
-        if key in emojis:
-            st.write(f"{emojis[key]} {key}: {value:.2f}")
-        else:
-            st.write(f"{key}: {value:.2f}")
-
-
-    def plot_data(df):
-        # Create a date column
-        df['date'] = pd.to_datetime(df[['year','month','day']])
-
-        # Temperature plot
-        df_areachart_temp = df[['date', 'temperature_2m_mean']].set_index('date')
-        st.area_chart(df_areachart_temp)
-
-        # Histogram
-        plt.figure(figsize=(10, 5))
-        sns.histplot(data=df, x='shortwave_radiation_sum', kde=False, color='orange', bins=10)
-        plt.title('Shortwave Radiation Sum Histogram')
-        plt.xlabel('Shortwave Radiation Sum MJ/m²')
-        plt.ylabel('Frequency')
-        st.pyplot(plt)
-
-        # Shortwave Radiation Sum plot
-        df_linechart_radiation = df[['date', 'shortwave_radiation_sum']].set_index('date')
-        g = sns.relplot(data=df, x='date', y='shortwave_radiation_sum', kind='line', aspect=2)
-        g.set_xticklabels(rotation=45)
-        plt.show()
-
-        # Wind speed plot
-        df_linechart = df[['date', 'windspeed_10m_max']].set_index('date')
-        st.line_chart(df_linechart)
-
-        # Violin plot
-        plt.figure(figsize=(10, 6))
-        sns.violinplot(data=df, x='month', y='et0_fao_evapotranspiration')
-        plt.title('Monthly et0_fao_evapotranspiration Violin Plots')
-        st.pyplot(plt)
-
-        # Precipitation plot
-        plt.figure(figsize=(10, 6))
-        sns.lineplot(data=df, x='date', y='precipitation_hours')
-        plt.yscale('log')
-        plt.ylim(bottom=0.1)
-        plt.title('Precipitation Hours Over Time')
-        plt.xlabel('Date')
-        plt.ylabel('Precipitation Hours (log scale)')
-        plt.xticks(rotation=45)
-        st.pyplot(plt.gcf())
-
     st.title("Tunisia's Atmospheric Oracle: Tempus App")
-    st.image(r'all_season_cycle.jpg', width=700)
+    st.image('all_season_cycle.jpg', width=700)
 
     st.sidebar.title("About")
     st.sidebar.info("This app uses an XGBoost model trained on weather data to make predictions.")
-    
-    
-    # user interaction code 
     st.title("Weather Buddy: Chatbot and Predictions")
-    st.write("Welcome! I'm your weather buddy. How can I assist you today?")
+    st.write("Welcome! I'm your weather buddy. Ask and I'll sprinkle some forecasts your way!")
     st.write("Here's what I can do for you:")
     st.write("1. Show prediction of temperature_2m_mean")
     st.write("2. Show rain_sum")
@@ -324,62 +312,109 @@ def main():
     st.write("4. Show Shortwave Radiation Sum")
     st.write("5. Show et0_fao_evapotranspiration")
     st.write("6. Show all of the above")
+    st.write("To make a prediction, say 'predict for option [number] for date [date]'.")
+    st.write("Example: 'predict for option 1 for date June 19, 2023'")
 
-    # User interaction options
-    option = st.text_input("Please type the number of the option you want:")
+    option = ""
+    date_input = ""
 
-    if option:  # check if option is not empty
+    # Speech recognition
+    if st.button("Speak"):
+        result = transcribe_speech()
+        if result[0] is not None and result[1] is not None:
+            option, date_input = result
+            st.write("You said: predict for option ", option, " for date ", date_input)
+        else:
+            st.write("Sorry, I did not get that.")
+
+    option = st.text_input("Please type the number of the option you want:", value=option)
+    date_input = st.text_input("Please enter a date (YYYY-MM-DD) for the prediction:", value=date_input)
+
+    if option and date_input:  # if both option and date_input are not empty
         if option.isdigit():
             option = int(option)
             if option >= 1 and option <= 6:
-                # Get user input for date
-                date_input = st.text_input("Please enter a date (YYYY-MM-DD) for the prediction:")
+                # Convert user input date to datetime format
+                try:
+                    date = datetime.strptime(date_input, "%Y-%m-%d").date()
+                except ValueError:
+                    st.error("Invalid date format. Please say a date in the format YYYY-MM-DD.")
+                    return
 
-                if date_input:  # check if date_input is not empty
-                    # Convert user input date to datetime format
-                    try:
-                        date = datetime.strptime(date_input, "%Y-%m-%d").date()
-                    except ValueError:
-                        st.error("Invalid date format. Please enter a date in the format YYYY-MM-DD.")
-                        return
-
-                    # Display weather predictions based on user input
-                    results = predict_weather(date_input, model_path='xgboost_model.model')
-                    if 'error' in results:
-                        st.error("An error occurred: " + results['error'])
+                # Display weather predictions based on user input
+                results = predict_weather(date_input, model_path='xgboost_model.model')
+                if 'error' in results:
+                    st.error("An error occurred: " + results['error'])
+                else:
+                    # Create mapping between options and keys
+                    options = {
+                        1: 'temperature_2m_mean',
+                        2: 'rain_sum',
+                        3: 'precipitation_sum',
+                        4: 'shortwave_radiation_sum',
+                        5: 'et0_fao_evapotranspiration'
+                    }
+                    if option == 6:
+                        for key, value in results.items():
+                            display_predictions(key, value)
                     else:
-                        # Create mapping between options and keys
-                        options = {
-                            1: 'temperature_2m_mean',
-                            2: 'rain_sum',
-                            3: 'precipitation_sum',
-                            4: 'shortwave_radiation_sum',
-                            5: 'et0_fao_evapotranspiration'
-                        }
-
-                        if option == 6:
-                            for key, value in results.items():
-                                display_predictions(key, value)
+                        key = options[option]
+                        if key in results:
+                            display_predictions(key, results[key])
                         else:
-                            key = options[option]
-                            if key in results:
-                                display_predictions(key, results[key])
-                            else:
-                                st.error(f"No prediction available for {key}.")
-
+                            st.error(f"No prediction available for {key}.")
             else:
-                st.error("Invalid option. Please enter a number between 1 and 6.")
+                st.error("Invalid option. Please say a number between 1 and 6.")
         else:
-            st.error("Invalid input. Please enter a number.")
-    # Assuming df is your DataFrame
-    plot_data(df)
+            st.error("Invalid input. Please say a number.")
+
+
+
+    # Create a date column
+    df['date'] = pd.to_datetime(df[['year', 'month', 'day']])
+
+    # Temperature plot
+    df_areachart_temp = df[['date', 'temperature_2m_mean']].set_index('date')
+    st.area_chart(df_areachart_temp)
+
+    # Histogram
+    plt.figure(figsize=(10, 5))
+    sns.histplot(data=df, x='shortwave_radiation_sum', kde=False, color='orange', bins=10)
+    plt.title('Shortwave Radiation Sum Histogram')
+    plt.xlabel('Shortwave Radiation Sum MJ/m²')
+    plt.ylabel('Frequency')
+    st.pyplot(plt)
+
+    # Shortwave Radiation Sum plot
+    df_linechart_radiation = df[['date', 'shortwave_radiation_sum']].set_index('date')
+    g = sns.relplot(data=df, x='date', y='shortwave_radiation_sum', kind='line', aspect=2)
+    g.set_xticklabels(rotation=45)
+    plt.show()
+
+    # Wind speed plot
+    df_linechart = df[['date', 'windspeed_10m_max']].set_index('date')
+    st.line_chart(df_linechart)
+
+    # Violin plot
+    plt.figure(figsize=(10, 6))
+    sns.violinplot(data=df, x='month', y='et0_fao_evapotranspiration')
+    plt.title('Monthly et0_fao_evapotranspiration Violin Plots')
+    st.pyplot(plt)
+
+    # Precipitation plot
+    plt.figure(figsize=(10, 6))
+    sns.lineplot(data=df, x='date', y='precipitation_hours')
+    plt.yscale('log')
+    plt.ylim(bottom=0.1)
+    plt.title('Precipitation Hours Over Time')
+    plt.xlabel('Date')
+    plt.ylabel('Precipitation Hours (log scale)')
+    plt.xticks(rotation=45)
+    st.pyplot(plt.gcf())
+
 
 if __name__ == "__main__":
     main()
-
-
-
-
 
 
 # %% [markdown]
