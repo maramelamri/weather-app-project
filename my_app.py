@@ -11,7 +11,6 @@ from sklearn.metrics import mean_squared_error
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import StandardScaler
 from pandas.api.types import is_numeric_dtype
-import sqlite3
 import xgboost as xgb
 from sklearn.metrics import mean_squared_error
 from sklearn.metrics import mean_squared_error, r2_score
@@ -21,8 +20,8 @@ import speech_recognition as sr
 from pydub import AudioSegment
 import emoji
 import dateparser
-
-
+import re
+from dateutil import parser
 
 
 
@@ -170,45 +169,6 @@ print('Mean Squared Error:', mse)
 # Save model
 model.save_model('xgboost_model.model')
 
-
-# %% [markdown]
-# #Store the weather data in an SQLite database for future use
-
-
-
-# Write the data to a sqlite table
-# Write the data to a SQLite table
-conn = sqlite3.connect('weather_data.db')
-c = conn.cursor()
-
-# Create table if not exists
-c.execute('''
-    CREATE TABLE IF NOT EXISTS weather(
-        time TEXT,
-        weathercode REAL,
-        temperature_2m_max REAL,
-        temperature_2m_min REAL,
-        temperature_2m_mean REAL,
-        sunrise TEXT,
-        sunset TEXT,
-        shortwave_radiation_sum REAL,
-        precipitation_sum REAL,
-        rain_sum REAL,
-        precipitation_hours REAL,
-        windspeed_10m_max REAL,
-        et0_fao_evapotranspiration REAL,
-        year INTEGER,
-        month INTEGER,
-        day INTEGER
-    )
-''')
-
-# Save data to SQLite database
-df.to_sql('weather', conn, if_exists='append', index=False)
-
-# Commit changes and close connection
-conn.commit()
-conn.close()
 #
 # %% [predict_weather function]
 
@@ -239,10 +199,6 @@ def predict_weather(input_date, model_path='xgboost_model.model'):
 
 
 
- 
-
-
-
 
 ##Streamlit app
 
@@ -252,32 +208,43 @@ def predict_weather(input_date, model_path='xgboost_model.model'):
 def transcribe_speech():
     r = sr.Recognizer()
     with sr.Microphone() as source:
-        st.info("Speak now...")
-        audio_text = r.listen(source)
-        st.info("Transcribing...")
+        st.write("Please say your command (e.g., predict for option 1 for date 2023-06-19)...")
+        audio_data = r.record(source, duration=7)
+        st.write("Recognizing...")
         try:
-            # Using Google Speech Recognition
-            text = r.recognize_google(audio_text)
+            text = r.recognize_google(audio_data)
+            st.write("Transcribed text: ", text)  
+            text = text.replace("option one", "option 1")
+            text = text.replace("option two", "option 2")
+            text = text.replace("option three", "option 3")
+            text = text.replace("option four", "option 4")
+            text = text.replace("option five", "option 5")
+            text = text.replace("option six", "option 6")
 
-            # Check if "for date" is in the text
-            if "for date" in text:
-                # Extract the date string
-                date_string = text.split("for date")[-1].strip()
-                # Extract the option
-                option = text.split(" ")[-1]
+            pattern_option = r"option\s(\d)"
+            pattern_date = r"\b(for day)\b\s([\w\s\d]*)"
+            option = re.findall(pattern_option, text)
+            date_string = re.findall(pattern_date, text)
+            if date_string:
+                try:
+                    date = parser.parse(date_string[0][1]).strftime('%Y-%m-%d')
+                except ValueError:
+                    date = None
+            else:
+                date = None
                 
-                # Try to parse the date
-                date_object = dateparser.parse(date_string)
-                
-                # If date parsing was successful, replace the date string with a formatted date
-                if date_object:
-                    date_string = date_object.strftime("%Y-%m-%d")
-
-                return option, date_string
+            st.write("Option found: ", option)
+            st.write("Date found: ", date)
+            
+            if option and date:
+                return option[0], date
             else:
                 return None, None
-        except:
+        except sr.UnknownValueError:
             return None, None
+
+
+
 
 
 # Function to display weather predictions with emojis
